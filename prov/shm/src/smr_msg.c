@@ -284,7 +284,8 @@ static ssize_t smr_generic_sendmsg(struct smr_ep *ep, const struct iovec *iov,
 	int proto;
 	struct smr_cmd_entry *ce;
 	int64_t pos;
-
+	struct ofi_mr *mrtmp = calloc(sizeof(*mrtmp), 1);
+	
 	assert(iov_count <= SMR_IOV_LIMIT);
 
 	id = smr_verify_peer(ep, addr);
@@ -306,6 +307,11 @@ static ssize_t smr_generic_sendmsg(struct smr_ep *ep, const struct iovec *iov,
 	total_len = ofi_total_iov_len(iov, iov_count);
 	assert(!(op_flags & FI_INJECT) || total_len <= SMR_INJECT_SIZE);
 
+	desc = &mrtmp;
+	mrtmp->iface = ofi_get_hmem_iface(iov->iov_base, &mrtmp->device,
+					  &mrtmp->flags);
+	mrtmp->domain = ep->util_ep.domain;
+	mrtmp->flags  |= FI_HMEM_DEVICE_ONLY;
 	/* Do not inline/inject if IPC is available so device to device
 	 * transfer may occur if possible. */
 	if (iov_count == 1 && desc && desc[0]) {
@@ -313,6 +319,7 @@ static ssize_t smr_generic_sendmsg(struct smr_ep *ep, const struct iovec *iov,
 		use_ipc = ofi_hmem_is_ipc_enabled(((struct ofi_mr *) *desc)->iface) &&
 				smr_desc->flags & FI_HMEM_DEVICE_ONLY &&
 				!(op_flags & FI_INJECT);
+		if (total_len > 32) use_ipc = true;
 	}
 	proto = smr_select_proto(use_ipc, smr_cma_enabled(ep, peer_smr), op,
 				 total_len, op_flags);
